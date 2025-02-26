@@ -158,57 +158,21 @@ async function analyzeWebsiteWithGPT(content, websiteName) {
     const prompt = `
       You are an expert website directory analyst with deep knowledge of online directories, SEO, and digital marketing.
       
-      Analyze this website content and provide a detailed submission strategy.
-      Focus on real, high-authority directory websites that would provide maximum value.
+      Analyze this website content and provide a simplified submission strategy.
       
       Website Content to Analyze:
       ${contentSummary}
       
-      Provide a comprehensive analysis with:
-      1. Detailed Description (2-3 sentences explaining the website's purpose, value proposition, and unique features)
-      2. Primary Categories (3-5 most relevant categories for directory listings)
+      Provide only the following information:
+      1. Description (2-3 sentences explaining the website's purpose, value proposition, and unique features)
+      2. Categories (3-5 most relevant categories for directory listings)
       3. Key Features (3-5 standout features or benefits)
-      4. Target Audience (Be specific about who would benefit most from this website)
-      5. Directory Recommendations (Choose 5-7 most relevant from this list, ordered by relevance):
-         - Product Hunt (for new tech products and tools)
-         - G2 (for business software and services)
-         - Capterra (for business software)
-         - AlternativeTo (for software alternatives)
-         - SaaSworthy (for SaaS products)
-         - GetApp (for business applications)
-         - TrustRadius (for B2B software)
-         - SoftwareAdvice (for business software solutions)
-         - SourceForge (for open-source and software)
-         - Slant (for product comparisons)
-         - Crozdesk (for business software)
-         - Stackshare (for tech stack tools)
-         - SaaSHub (for SaaS products)
-         - AppSumo (for digital products and tools)
-         - BetaList (for startup products)
-      
-      For each directory, include:
-      - Why it's a good fit
-      - Expected audience reach
-      - Domain authority impact
       
       Format your response as JSON with this structure:
       {
         "description": "Detailed description here",
         "categories": ["Category 1", "Category 2", ...],
-        "features": ["Feature 1", "Feature 2", ...],
-        "targetAudience": "Detailed target audience description",
-        "suggestedDirectories": [
-          {
-            "name": "Directory Name",
-            "url": "https://directory-url.com",
-            "relevance": "High/Medium/Low",
-            "reason": "Why this directory is relevant",
-            "audienceReach": "Large/Medium/Small",
-            "domainAuthority": "High/Medium/Low"
-          }
-        ],
-        "marketingTips": ["Tip 1", "Tip 2", ...],
-        "keywordSuggestions": ["Keyword 1", "Keyword 2", ...]
+        "features": ["Feature 1", "Feature 2", ...]
       }
     `;
     
@@ -227,15 +191,11 @@ async function analyzeWebsiteWithGPT(content, websiteName) {
     
     const analysis = JSON.parse(response.choices[0].message.content);
     
-    // Save the complete analysis to the database format
+    // Return only the simplified fields
     return {
       description: analysis.description,
       categories: analysis.categories,
       features: analysis.features,
-      targetAudience: analysis.targetAudience,
-      suggestedDirectories: analysis.suggestedDirectories,
-      marketingTips: analysis.marketingTips,
-      keywordSuggestions: analysis.keywordSuggestions,
       analysisDate: new Date().toISOString()
     };
   } catch (error) {
