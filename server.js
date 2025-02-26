@@ -47,7 +47,7 @@ const TABLE_MAPPINGS = {
     keyField: 'id',
     fields: [
       'id', 'product_name', 'one_liner', 'description', 'website_url', 
-      'price', 'plan_name', 'pros', 'cons', 'categories', 'email',
+      'price', 'plan_name', 'pros', 'cons', 'categories', 'email', 'password',
       'logo_url', 'screenshot_urls', 'coupon_codes', 'twitter_handle',
       'office_address', 'pricing_model', 'primary_builder', 'secondary_builder',
       'discovery_source', 'status', 'user_id', 'created_at'
