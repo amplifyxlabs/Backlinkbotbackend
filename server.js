@@ -8,9 +8,9 @@ const OpenAI = require('openai');
 const Airtable = require('airtable');
 const cron = require('node-cron');
 const { Resend } = require('resend');
-const puppeteer = require('puppeteer');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const puppeteerExtra = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const chromium = require('@sparticuz/chromium');
 
 // Load environment variables
 dotenv.config();
@@ -138,31 +138,34 @@ async function scrapeWebsiteWithPuppeteer(url) {
   try {
     console.log('Launching browser...');
     
-    // Use puppeteer-extra with stealth plugin
-    const puppeteer = require('puppeteer');
-    const puppeteerExtra = require('puppeteer-extra');
-    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-    puppeteerExtra.use(StealthPlugin());
-
-    // Launch browser with specific configuration for Render
-    browser = await puppeteerExtra.launch({
-      headless: 'new',
+    // Configure chromium for Render environment
+    const puppeteerConfig = {
+      headless: chromium.headless,
+      defaultViewport: {
+        width: 1280,
+        height: 720,
+        deviceScaleFactor: 1,
+      },
+      executablePath: await chromium.executablePath(),
       args: [
+        ...chromium.args,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
         '--disable-gpu',
-        '--window-size=1920x1080',
-        '--disable-software-rasterizer',
-        '--disable-extensions',
-        '--single-process',
         '--no-zygote',
-        '--disable-features=site-per-process'
+        '--single-process',
+        '--disable-extensions',
+        '--disable-accelerated-2d-canvas',
+        '--disable-web-security',
+        '--disable-features=site-per-process',
+        '--window-size=1280,720'
       ],
-      ignoreHTTPSErrors: true,
-      timeout: 60000 // Increase timeout to 60 seconds
-    });
+      ignoreHTTPSErrors: true
+    };
+
+    // Launch browser with stealth mode
+    browser = await puppeteerExtra.launch(puppeteerConfig);
 
     console.log('Browser launched successfully');
     const page = await browser.newPage();
