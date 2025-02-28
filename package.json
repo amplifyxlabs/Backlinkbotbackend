@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build": "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false npm install"
+    "build": "npm install"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

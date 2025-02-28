@@ -8,9 +8,9 @@ const OpenAI = require('openai');
 const Airtable = require('airtable');
 const cron = require('node-cron');
 const { Resend } = require('resend');
-const puppeteer = require('puppeteer-extra');
+const puppeteer = require('puppeteer');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { executablePath } = require('puppeteer');
+const puppeteerExtra = require('puppeteer-extra');
 
 // Load environment variables
 dotenv.config();
@@ -79,8 +79,8 @@ app.options('*', cors());
 
 app.use(express.json());
 
-// Add stealth plugin to puppeteer
-puppeteer.use(StealthPlugin());
+// Add stealth plugin
+puppeteerExtra.use(StealthPlugin());
 
 // Helper function to extract text content from HTML
 const extractTextContent = (html) => {
@@ -136,8 +136,9 @@ const extractTextContent = (html) => {
 async function scrapeWebsiteWithPuppeteer(url) {
   let browser = null;
   try {
+    console.log('Launching browser...');
     // Launch browser with stealth mode
-    browser = await puppeteer.launch({
+    browser = await puppeteerExtra.launch({
       headless: 'new',
       args: [
         '--no-sandbox',
@@ -148,10 +149,13 @@ async function scrapeWebsiteWithPuppeteer(url) {
         '--window-size=1920x1080',
         '--disable-software-rasterizer',
         '--disable-extensions',
-        '--single-process'
-      ]
+        '--single-process',
+        '--disable-features=site-per-process'
+      ],
+      ignoreHTTPSErrors: true
     });
 
+    console.log('Browser launched successfully');
     const page = await browser.newPage();
     
     // Set viewport and user agent
@@ -164,14 +168,16 @@ async function scrapeWebsiteWithPuppeteer(url) {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
     });
 
-    // Navigate to the page and wait for network to be idle
+    console.log('Navigating to URL:', url);
+    // Navigate to the page with increased timeout
     await page.goto(url, {
       waitUntil: ['networkidle0', 'domcontentloaded'],
-      timeout: 30000
+      timeout: 60000 // Increase timeout to 60 seconds
     });
 
+    console.log('Page loaded, waiting for content...');
     // Wait for the main content to load
-    await page.waitForSelector('body', { timeout: 10000 });
+    await page.waitForSelector('body', { timeout: 30000 });
 
     // Extract content
     const content = await page.evaluate(() => {
@@ -213,7 +219,12 @@ async function scrapeWebsiteWithPuppeteer(url) {
     throw error;
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+        console.log('Browser closed successfully');
+      } catch (closeError) {
+        console.error('Error closing browser:', closeError);
+      }
     }
   }
 }
