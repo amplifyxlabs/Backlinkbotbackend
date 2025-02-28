@@ -8,8 +8,10 @@ const OpenAI = require('openai');
 const Airtable = require('airtable');
 const cron = require('node-cron');
 const { Resend } = require('resend');
-const puppeteerExtra = require('puppeteer-extra');
+const puppeteer = require('puppeteer');
+const puppeteerCore = require('puppeteer-core');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const puppeteerExtra = require('puppeteer-extra');
 const chromium = require('@sparticuz/chromium');
 
 // Load environment variables
@@ -140,7 +142,7 @@ async function scrapeWebsiteWithPuppeteer(url) {
     
     // Configure chromium for Render environment
     const puppeteerConfig = {
-      headless: chromium.headless,
+      headless: true,
       defaultViewport: {
         width: 1280,
         height: 720,
@@ -164,8 +166,9 @@ async function scrapeWebsiteWithPuppeteer(url) {
       ignoreHTTPSErrors: true
     };
 
-    // Launch browser with stealth mode
-    browser = await puppeteerExtra.launch(puppeteerConfig);
+    // Launch browser with puppeteer directly (not puppeteer-extra)
+    // This is more reliable in Render's environment
+    browser = await puppeteer.launch(puppeteerConfig);
 
     console.log('Browser launched successfully');
     const page = await browser.newPage();
