@@ -163,11 +163,11 @@ async function scrapeWebsiteWithPuppeteer(url) {
         '--disable-features=site-per-process',
         '--window-size=1280,720'
       ],
-      ignoreHTTPSErrors: true
+      ignoreHTTPSErrors: true,
+      timeout: 90000 // Increased browser launch timeout to 60 seconds
     };
 
-    // Launch browser with puppeteer directly (not puppeteer-extra)
-    // This is more reliable in Render's environment
+    // Launch browser with puppeteer directly
     browser = await puppeteer.launch(puppeteerConfig);
 
     console.log('Browser launched successfully');
@@ -183,8 +183,8 @@ async function scrapeWebsiteWithPuppeteer(url) {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
     });
 
-    // Set a shorter timeout for resources
-    await page.setDefaultNavigationTimeout(30000);
+    // Set a longer timeout for resources
+    await page.setDefaultNavigationTimeout(60000); // Increased to 60 seconds
     
     // Block unnecessary resources to speed up loading
     await page.setRequestInterception(true);
@@ -198,13 +198,16 @@ async function scrapeWebsiteWithPuppeteer(url) {
     });
 
     console.log('Navigating to URL:', url);
-    // Navigate to the page with optimized settings
+    // Navigate to the page with increased timeout
     await page.goto(url, {
-      waitUntil: 'domcontentloaded', // Only wait for DOM content, not all resources
-      timeout: 30000 // Reduce timeout to 30 seconds
+      waitUntil: 'domcontentloaded', // Only wait for DOM content
+      timeout: 60000 // Increased to 60 seconds
     });
 
     console.log('Page loaded, extracting content...');
+    
+    // Wait for body with increased timeout
+    await page.waitForSelector('body', { timeout: 45000 }); // Increased to 45 seconds
     
     // Extract only essential content without waiting for all elements
     const content = await page.evaluate(() => {
@@ -299,12 +302,12 @@ app.post('/api/scrape-website', async (req, res) => {
   }
   
   // Set a timeout for the entire operation
-  const TIMEOUT_MS = 45000; // 45 seconds
+  const TIMEOUT_MS = 90000; // Increased to 90 seconds
   let timeoutId;
   
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
-      reject(new Error('Operation timed out after 45 seconds'));
+      reject(new Error('Operation timed out after 90 seconds'));
     }, TIMEOUT_MS);
   });
   
