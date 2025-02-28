@@ -443,6 +443,28 @@ const EMAIL_TEMPLATES = {
       <p>Best regards,<br>The BacklinkBot Team</p>
     `
   },
+  'in progress': {
+    subject: 'Your Product Submission is In Progress',
+    html: (productName) => `
+      <h1>Your Product Submission is In Progress</h1>
+      <p>Hello,</p>
+      <p>We're currently processing your product submission "${productName}".</p>
+      <p>Our team is working on reviewing and preparing your submission. We'll keep you updated on any developments.</p>
+      <p>Thank you for your patience!</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  },
+  done: {
+    subject: 'Your Product Submission Process is Complete',
+    html: (productName) => `
+      <h1>Product Submission Process Complete</h1>
+      <p>Hello,</p>
+      <p>We've completed processing your product submission "${productName}".</p>
+      <p>You can now view the final status and details in your dashboard.</p>
+      <p>Thank you for working with us!</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  },
   feedback1: {
     subject: 'Feedback Required for Your Product Submission',
     html: (productName) => `
@@ -451,6 +473,17 @@ const EMAIL_TEMPLATES = {
       <p>We've reviewed your product submission "${productName}" and need some additional information or clarification.</p>
       <p>Please check your dashboard for specific feedback points that need to be addressed.</p>
       <p>Thank you for your cooperation!</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  },
+  pending: {
+    subject: 'Product Submission Pending Review',
+    html: (productName) => `
+      <h1>Your Product Submission is Pending Review</h1>
+      <p>Hello,</p>
+      <p>Your product submission "${productName}" is currently pending review by our team.</p>
+      <p>We'll begin the review process shortly and notify you of any updates.</p>
+      <p>Thank you for your patience!</p>
       <p>Best regards,<br>The BacklinkBot Team</p>
     `
   },
