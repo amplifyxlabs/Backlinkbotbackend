@@ -7,9 +7,13 @@ const dotenv = require('dotenv');
 const OpenAI = require('openai');
 const Airtable = require('airtable');
 const cron = require('node-cron');
+const { Resend } = require('resend');
 
 // Load environment variables
 dotenv.config();
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -357,6 +361,72 @@ app.post('/api/sync-airtable', async (req, res) => {
   } catch (error) {
     console.error('Error during manual sync:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add email sending endpoints
+app.post('/api/send-submission-email', async (req, res) => {
+  const { email, productName } = req.body;
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'BacklinkBot <onboarding@resend.dev>',
+      to: email,
+      subject: 'Your Website Submission Received',
+      html: `
+        <h1>Thank you for submitting ${productName}!</h1>
+        <p>We have received your website submission and will begin processing it shortly.</p>
+        <p>You will receive another email once your submission is ready for directory listings.</p>
+        <br>
+        <p>Best regards,</p>
+        <p>The BacklinkBot Team</p>
+      `,
+    });
+
+    if (error) {
+      console.error('Email error:', error);
+      return res.status(400).json({ error });
+    }
+
+    res.status(200).json({ data });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
+app.post('/api/send-credit-used-email', async (req, res) => {
+  const { email, productName, plan } = req.body;
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'BacklinkBot <onboarding@resend.dev>',
+      to: email,
+      subject: 'Directory Submission Process Started',
+      html: `
+        <h1>Directory Submission Process Started for ${productName}</h1>
+        <p>We've started the directory submission process for your website using your ${plan} credit.</p>
+        <p>Here's what happens next:</p>
+        <ul>
+          <li>Our system will begin submitting your website to relevant directories</li>
+          <li>You'll receive progress updates as submissions are completed</li>
+          <li>A final report will be sent once all submissions are done</li>
+        </ul>
+        <br>
+        <p>Best regards,</p>
+        <p>The BacklinkBot Team</p>
+      `,
+    });
+
+    if (error) {
+      console.error('Email error:', error);
+      return res.status(400).json({ error });
+    }
+
+    res.status(200).json({ data });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Failed to send email' });
   }
 });
 
