@@ -137,7 +137,14 @@ async function scrapeWebsiteWithPuppeteer(url) {
   let browser = null;
   try {
     console.log('Launching browser...');
-    // Launch browser with stealth mode
+    
+    // Use puppeteer-extra with stealth plugin
+    const puppeteer = require('puppeteer');
+    const puppeteerExtra = require('puppeteer-extra');
+    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+    puppeteerExtra.use(StealthPlugin());
+
+    // Launch browser with specific configuration for Render
     browser = await puppeteerExtra.launch({
       headless: 'new',
       args: [
@@ -150,9 +157,11 @@ async function scrapeWebsiteWithPuppeteer(url) {
         '--disable-software-rasterizer',
         '--disable-extensions',
         '--single-process',
+        '--no-zygote',
         '--disable-features=site-per-process'
       ],
-      ignoreHTTPSErrors: true
+      ignoreHTTPSErrors: true,
+      timeout: 60000 // Increase timeout to 60 seconds
     });
 
     console.log('Browser launched successfully');
