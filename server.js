@@ -5,6 +5,8 @@ const cheerio = require('cheerio');
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
 const OpenAI = require('openai');
+const Airtable = require('airtable');
+const cron = require('node-cron');
 const { Resend } = require('resend');
 
 // Load environment variables
@@ -22,6 +24,40 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// Initialize Airtable
+const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY; // Your personal access token
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appGZlClarU43tuUw';
+Airtable.configure({
+  endpointUrl: 'https://api.airtable.com',
+  apiKey: AIRTABLE_API_KEY
+});
+const airtableBase = Airtable.base(AIRTABLE_BASE_ID);
+
+// Table mappings between Supabase and Airtable
+const TABLE_MAPPINGS = {
+  payments: {
+    supabaseTable: 'payments',
+    airtableTable: 'Payments', // Create this table in Airtable
+    keyField: 'id', // Field to use for identifying records
+    fields: [
+      'id', 'user_id', 'order_id', 'variant_id', 'status', 
+      'amount', 'currency', 'credits', 'created_at', 'updated_at'
+    ]
+  },
+  product_submissions: {
+    supabaseTable: 'product_submissions',
+    airtableTable: 'Product Submissions', // Create this table in Airtable
+    keyField: 'id',
+    fields: [
+      'id', 'product_name', 'one_liner', 'description', 'website_url', 
+      'price', 'plan_name', 'pros', 'cons', 'categories', 'email', 'password',
+      'logo_url', 'screenshot_urls', 'coupon_codes', 'twitter_handle',
+      'office_address', 'pricing_model', 'primary_builder', 'secondary_builder',
+      'discovery_source', 'status', 'user_id', 'created_at'
+    ]
+  }
+};
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -108,7 +144,7 @@ app.post('/api/scrape-website', async (req, res) => {
       url = 'https://' + url;
     }
     
-    console.log('Attempting to scrape:', url);
+    console.log('Attempting to scrape:', url); // Add logging
     
     // Fetch the website content
     const response = await axios.get(url, {
@@ -118,17 +154,17 @@ app.post('/api/scrape-website', async (req, res) => {
       timeout: 10000 // 10 seconds timeout
     });
     
-    console.log('Successfully fetched website');
+    console.log('Successfully fetched website'); // Add logging
     
     // Extract content
     const content = extractTextContent(response.data);
     
-    console.log('Content extracted, analyzing with GPT...');
+    console.log('Content extracted, analyzing with GPT...'); // Add logging
     
     // Use GPT-4o to analyze the content
     const gptAnalysis = await analyzeWebsiteWithGPT(content, websiteName);
     
-    console.log('GPT analysis complete');
+    console.log('GPT analysis complete'); // Add logging
     
     // Return the scraped content and GPT analysis
     res.json({ 
@@ -137,7 +173,7 @@ app.post('/api/scrape-website', async (req, res) => {
       message: 'Website successfully analyzed'
     });
   } catch (error) {
-    console.error('Error details:', error);
+    console.error('Error details:', error); // Add detailed error logging
     res.status(500).json({ 
       error: 'Failed to scrape website',
       message: error.message,
@@ -207,6 +243,126 @@ async function analyzeWebsiteWithGPT(content, websiteName) {
     return null;
   }
 }
+
+/**
+ * Syncs data from Supabase to Airtable
+ * @param {string} tableKey - Key of the table in TABLE_MAPPINGS
+ * @param {Date} lastSyncTime - Last sync timestamp
+ * @returns {Promise<Date>} - New sync timestamp
+ */
+async function syncToAirtable(tableKey, lastSyncTime) {
+  const mapping = TABLE_MAPPINGS[tableKey];
+  const { supabaseTable, airtableTable, keyField, fields } = mapping;
+  
+  console.log(`Starting sync for ${supabaseTable} to Airtable...`);
+  
+  try {
+    // Get records from Supabase that were updated since lastSyncTime
+    let query = supabase
+      .from(supabaseTable)
+      .select(fields.join(','));
+    
+    if (lastSyncTime) {
+      // Only get records updated since last sync
+      query = query.gte('updated_at', lastSyncTime.toISOString());
+    }
+    
+    const { data: records, error } = await query;
+    
+    if (error) {
+      console.error(`Error fetching ${supabaseTable} records:`, error);
+      return lastSyncTime;
+    }
+    
+    console.log(`Found ${records.length} records to sync to Airtable`);
+    
+    // Process records in batches of 10 (Airtable API limit)
+    for (let i = 0; i < records.length; i += 10) {
+      const batch = records.slice(i, i + 10);
+      await processAirtableBatch(airtableTable, batch, keyField);
+    }
+    
+    return new Date(); // Return current time as new sync time
+  } catch (error) {
+    console.error(`Error syncing ${supabaseTable} to Airtable:`, error);
+    return lastSyncTime;
+  }
+}
+
+/**
+ * Process a batch of records for Airtable
+ * @param {string} airtableTable - Airtable table name
+ * @param {Array} records - Array of records to process
+ * @param {string} keyField - Field to use for identifying records
+ */
+async function processAirtableBatch(airtableTable, records, keyField) {
+  try {
+    // For each record in the batch, check if it exists in Airtable
+    for (const record of records) {
+      // Convert arrays to strings for Airtable
+      const preparedRecord = {};
+      for (const [key, value] of Object.entries(record)) {
+        if (Array.isArray(value)) {
+          preparedRecord[key] = JSON.stringify(value);
+        } else {
+          preparedRecord[key] = value;
+        }
+      }
+      
+      // Try to find existing record in Airtable
+      const existingRecords = await airtableBase(airtableTable)
+        .select({
+          filterByFormula: `{${keyField}} = "${record[keyField]}"`,
+          maxRecords: 1
+        })
+        .firstPage();
+      
+      if (existingRecords && existingRecords.length > 0) {
+        // Update existing record
+        await airtableBase(airtableTable).update(existingRecords[0].id, preparedRecord);
+        console.log(`Updated record ${record[keyField]} in Airtable`);
+      } else {
+        // Create new record
+        await airtableBase(airtableTable).create(preparedRecord);
+        console.log(`Created record ${record[keyField]} in Airtable`);
+      }
+    }
+  } catch (error) {
+    console.error('Error processing Airtable batch:', error);
+    throw error;
+  }
+}
+
+// Store last sync times
+let lastSyncTimes = {
+  payments: null,
+  product_submissions: null
+};
+
+// Setup cron job to sync every 5 minutes
+cron.schedule('*/5 * * * *', async () => {
+  console.log('Running scheduled sync with Airtable...');
+  
+  // Sync each table
+  for (const tableKey of Object.keys(TABLE_MAPPINGS)) {
+    lastSyncTimes[tableKey] = await syncToAirtable(tableKey, lastSyncTimes[tableKey]);
+  }
+  
+  console.log('Sync completed');
+});
+
+// Add API endpoint to manually trigger a sync
+app.post('/api/sync-airtable', async (req, res) => {
+  try {
+    for (const tableKey of Object.keys(TABLE_MAPPINGS)) {
+      lastSyncTimes[tableKey] = await syncToAirtable(tableKey, lastSyncTimes[tableKey]);
+    }
+    res.json({ success: true, message: 'Sync with Airtable completed' });
+  } catch (error) {
+    console.error('Error during manual sync:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Add email sending endpoints
 app.post('/api/send-submission-email', async (req, res) => {
@@ -332,6 +488,8 @@ app.post('/api/product-submissions/status', async (req, res) => {
   }
 
   try {
+    console.log(`Processing status update for submission ${submissionId} to ${newStatus}`);
+    
     // Get the product submission details
     const { data: submission, error: fetchError } = await supabase
       .from('product_submissions')
@@ -339,10 +497,22 @@ app.post('/api/product-submissions/status', async (req, res) => {
       .eq('id', submissionId)
       .single();
 
-    if (fetchError) throw fetchError;
+    if (fetchError) {
+      console.error('Error fetching submission:', fetchError);
+      throw fetchError;
+    }
+    
     if (!submission) {
+      console.error('Submission not found:', submissionId);
       return res.status(404).json({ error: 'Product submission not found' });
     }
+
+    console.log('Fetched submission:', {
+      id: submission.id,
+      product_name: submission.product_name,
+      email_user: submission.email_user,
+      status: submission.status
+    });
 
     // Update the status
     const { error: updateError } = await supabase
@@ -350,21 +520,44 @@ app.post('/api/product-submissions/status', async (req, res) => {
       .update({ status: newStatus })
       .eq('id', submissionId);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error('Error updating status:', updateError);
+      throw updateError;
+    }
+
+    console.log('Status updated successfully');
 
     // Send email notification if template exists for the status
-    if (EMAIL_TEMPLATES[newStatus] && submission.email_user) {
-      try {
-        await resend.emails.send({
-          from: 'BacklinkBot <notifications@backlinkbot.com>',
-          to: submission.email_user,
-          subject: EMAIL_TEMPLATES[newStatus].subject,
-          html: EMAIL_TEMPLATES[newStatus].html(submission.product_name)
-        });
-      } catch (emailError) {
-        console.error('Failed to send email:', emailError);
-        // Don't throw error here, just log it
+    if (EMAIL_TEMPLATES[newStatus]) {
+      if (!submission.email_user) {
+        console.warn('No email_user found for submission:', submissionId);
+      } else {
+        try {
+          console.log('Attempting to send email to:', submission.email_user);
+          
+          const emailData = {
+            from: 'BacklinkBot <notifications@backlinkbot.com>',
+            to: submission.email_user,
+            subject: EMAIL_TEMPLATES[newStatus].subject,
+            html: EMAIL_TEMPLATES[newStatus].html(submission.product_name)
+          };
+          
+          console.log('Sending email with data:', emailData);
+          
+          const emailResponse = await resend.emails.send(emailData);
+          console.log('Email sent successfully:', emailResponse);
+          
+        } catch (emailError) {
+          console.error('Failed to send email:', {
+            error: emailError,
+            errorMessage: emailError.message,
+            errorDetails: emailError.details
+          });
+          // Don't throw error here, just log it
+        }
       }
+    } else {
+      console.log('No email template found for status:', newStatus);
     }
 
     res.json({ 
@@ -372,7 +565,7 @@ app.post('/api/product-submissions/status', async (req, res) => {
       submission: { ...submission, status: newStatus }
     });
   } catch (error) {
-    console.error('Error updating status:', error);
+    console.error('Error in status update endpoint:', error);
     res.status(500).json({ 
       error: 'Failed to update status',
       details: error.message
