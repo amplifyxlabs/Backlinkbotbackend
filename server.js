@@ -138,8 +138,7 @@ async function scrapeWebsiteWithPuppeteer(url) {
   try {
     // Launch browser with stealth mode
     browser = await puppeteer.launch({
-      headless: "new",
-      executablePath: executablePath(),
+      headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -147,7 +146,8 @@ async function scrapeWebsiteWithPuppeteer(url) {
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--window-size=1920x1080'
-      ]
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
     });
 
     const page = await browser.newPage();
