@@ -8,6 +8,9 @@ const OpenAI = require('openai');
 const Airtable = require('airtable');
 const cron = require('node-cron');
 const { Resend } = require('resend');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { executablePath } = require('puppeteer');
 
 // Load environment variables
 dotenv.config();
@@ -76,6 +79,9 @@ app.options('*', cors());
 
 app.use(express.json());
 
+// Add stealth plugin to puppeteer
+puppeteer.use(StealthPlugin());
+
 // Helper function to extract text content from HTML
 const extractTextContent = (html) => {
   const $ = cheerio.load(html);
@@ -126,9 +132,93 @@ const extractTextContent = (html) => {
   };
 };
 
-// Endpoint to scrape a website
+// Updated website scraping function using Puppeteer
+async function scrapeWebsiteWithPuppeteer(url) {
+  let browser = null;
+  try {
+    // Launch browser with stealth mode
+    browser = await puppeteer.launch({
+      headless: "new",
+      executablePath: executablePath(),
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920x1080'
+      ]
+    });
+
+    const page = await browser.newPage();
+    
+    // Set viewport and user agent
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+
+    // Add extra headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+    });
+
+    // Navigate to the page and wait for network to be idle
+    await page.goto(url, {
+      waitUntil: ['networkidle0', 'domcontentloaded'],
+      timeout: 30000
+    });
+
+    // Wait for the main content to load
+    await page.waitForSelector('body', { timeout: 10000 });
+
+    // Extract content
+    const content = await page.evaluate(() => {
+      const getMetaContent = (name) => {
+        const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
+        return meta ? meta.getAttribute('content') : '';
+      };
+
+      // Get all text content while excluding script and style tags
+      const getText = (selector) => {
+        const elements = document.querySelectorAll(selector);
+        return Array.from(elements)
+          .map(el => el.textContent.trim())
+          .filter(text => text.length > 0);
+      };
+
+      return {
+        title: document.title,
+        metaDescription: getMetaContent('description') || getMetaContent('og:description'),
+        mainContent: document.body.innerText,
+        headings: [
+          ...getText('h1'),
+          ...getText('h2'),
+          ...getText('h3')
+        ],
+        paragraphs: getText('p'),
+        links: Array.from(document.querySelectorAll('a'))
+          .map(a => ({
+            href: a.href,
+            text: a.textContent.trim()
+          }))
+          .filter(link => link.text && link.href && !link.href.startsWith('#'))
+      };
+    });
+
+    return content;
+  } catch (error) {
+    console.error('Puppeteer scraping error:', error);
+    throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+// Update the scrape endpoint to use Puppeteer
 app.post('/api/scrape-website', async (req, res) => {
-  const { websiteUrl, websiteName } = req.body;
+  const { websiteUrl, websiteName, userId } = req.body;
   
   if (!websiteUrl) {
     return res.status(400).json({ 
@@ -144,27 +234,35 @@ app.post('/api/scrape-website', async (req, res) => {
       url = 'https://' + url;
     }
     
-    console.log('Attempting to scrape:', url); // Add logging
+    console.log('Attempting to scrape:', url);
     
-    // Fetch the website content
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      },
-      timeout: 10000 // 10 seconds timeout
-    });
+    // Use Puppeteer to scrape the website
+    const content = await scrapeWebsiteWithPuppeteer(url);
     
-    console.log('Successfully fetched website'); // Add logging
+    console.log('Content extracted, analyzing with GPT...');
     
-    // Extract content
-    const content = extractTextContent(response.data);
-    
-    console.log('Content extracted, analyzing with GPT...'); // Add logging
-    
-    // Use GPT-4o to analyze the content
+    // Use GPT to analyze the content
     const gptAnalysis = await analyzeWebsiteWithGPT(content, websiteName);
     
-    console.log('GPT analysis complete'); // Add logging
+    console.log('GPT analysis complete');
+
+    // Store the results in the database if userId is provided
+    if (userId) {
+      const { data, error } = await supabase
+        .from('website_content')
+        .insert([{
+          user_id: userId,
+          website_name: websiteName,
+          website_url: url,
+          content: content,
+          gpt_analysis: gptAnalysis,
+          relevant_directories: gptAnalysis?.suggestedDirectories?.length || 0
+        }]);
+
+      if (error) {
+        console.error('Error storing website content:', error);
+      }
+    }
     
     // Return the scraped content and GPT analysis
     res.json({ 
@@ -173,7 +271,7 @@ app.post('/api/scrape-website', async (req, res) => {
       message: 'Website successfully analyzed'
     });
   } catch (error) {
-    console.error('Error details:', error); // Add detailed error logging
+    console.error('Error details:', error);
     res.status(500).json({ 
       error: 'Failed to scrape website',
       message: error.message,
