@@ -370,7 +370,7 @@ app.post('/api/send-submission-email', async (req, res) => {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: 'BacklinkBot <onboarding@resend.dev>',
+      from: 'BacklinkBot <noreply@backlinkbotai.com>',
       to: email,
       subject: 'Your Website Submission Received',
       html: `
@@ -400,7 +400,7 @@ app.post('/api/send-credit-used-email', async (req, res) => {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: 'BacklinkBot <onboarding@resend.dev>',
+      from: 'BacklinkBot <noreply@backlinkbotai.com>',
       to: email,
       subject: 'Directory Submission Process Started',
       html: `
