@@ -395,105 +395,6 @@ app.post('/api/send-submission-email', async (req, res) => {
   }
 });
 
-// Add new endpoint for status update emails
-app.post('/api/send-status-update-email', async (req, res) => {
-  const { email, productName, status } = req.body;
-
-  // Email content based on status
-  const getEmailContent = (status) => {
-    switch (status) {
-      case 'verifying':
-        return {
-          subject: 'Your Website Submission is Being Verified',
-          content: `
-            <h1>Verification in Progress for ${productName}</h1>
-            <p>We are currently verifying your website submission. Our team is reviewing the details to ensure everything meets our quality standards.</p>
-            <p>You will receive another update once the verification is complete.</p>
-          `
-        };
-      case 'in progress':
-        return {
-          subject: 'Your Website Submission is In Progress',
-          content: `
-            <h1>Processing Your Submission for ${productName}</h1>
-            <p>Your website submission is now being processed. Our team is working on preparing your listing.</p>
-            <p>We'll keep you updated on the progress.</p>
-          `
-        };
-      case 'done':
-        return {
-          subject: 'Your Website Submission is Complete',
-          content: `
-            <h1>Submission Complete for ${productName}</h1>
-            <p>Great news! Your website submission has been fully processed and is now complete.</p>
-            <p>You can check your dashboard for the full details.</p>
-          `
-        };
-      case 'feedback1':
-        return {
-          subject: 'Feedback Required for Your Website Submission',
-          content: `
-            <h1>Feedback Needed for ${productName}</h1>
-            <p>We need some additional information or clarification about your website submission.</p>
-            <p>Please check your dashboard and provide the requested feedback to continue the process.</p>
-          `
-        };
-      case 'approved':
-        return {
-          subject: 'Your Website Submission Has Been Approved',
-          content: `
-            <h1>Congratulations! ${productName} Has Been Approved</h1>
-            <p>We're pleased to inform you that your website submission has been approved.</p>
-            <p>Your listing is now live and ready for directory submissions.</p>
-          `
-        };
-      case 'rejected':
-        return {
-          subject: 'Website Submission Status Update',
-          content: `
-            <h1>Update Regarding ${productName}</h1>
-            <p>After careful review, we regret to inform you that your website submission could not be approved at this time.</p>
-            <p>Please review our guidelines and feel free to submit again after making the necessary adjustments.</p>
-          `
-        };
-      default:
-        return {
-          subject: 'Website Submission Status Update',
-          content: `
-            <h1>Status Update for ${productName}</h1>
-            <p>Your submission status has been updated to: ${status}</p>
-            <p>You can check your dashboard for more details.</p>
-          `
-        };
-    }
-  };
-
-  try {
-    const emailContent = getEmailContent(status);
-    const { data, error } = await resend.emails.send({
-      from: 'BacklinkBot <noreply@backlinkbotai.com>',
-      to: email,
-      subject: emailContent.subject,
-      html: `
-        ${emailContent.content}
-        <br>
-        <p>Best regards,</p>
-        <p>The BacklinkBot Team</p>
-      `,
-    });
-
-    if (error) {
-      console.error('Email error:', error);
-      return res.status(400).json({ error });
-    }
-
-    res.status(200).json({ data });
-  } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Failed to send email' });
-  }
-});
-
 app.post('/api/send-credit-used-email', async (req, res) => {
   const { email, productName, plan } = req.body;
 
@@ -526,6 +427,112 @@ app.post('/api/send-credit-used-email', async (req, res) => {
   } catch (error) {
     console.error('Server error:', error);
     res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
+// Email templates for different status notifications
+const EMAIL_TEMPLATES = {
+  verifying: {
+    subject: 'Your Product Submission is Being Verified',
+    html: (productName) => `
+      <h1>Your Product Submission is Being Verified</h1>
+      <p>Hello,</p>
+      <p>We wanted to let you know that your product submission "${productName}" is currently being verified by our team.</p>
+      <p>We'll review all the details you've provided and get back to you soon with the next steps.</p>
+      <p>Thank you for your patience!</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  },
+  feedback1: {
+    subject: 'Feedback Required for Your Product Submission',
+    html: (productName) => `
+      <h1>Feedback Required for Your Product Submission</h1>
+      <p>Hello,</p>
+      <p>We've reviewed your product submission "${productName}" and need some additional information or clarification.</p>
+      <p>Please check your dashboard for specific feedback points that need to be addressed.</p>
+      <p>Thank you for your cooperation!</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  },
+  approved: {
+    subject: 'Congratulations! Your Product Has Been Approved',
+    html: (productName) => `
+      <h1>Your Product Has Been Approved! 🎉</h1>
+      <p>Hello,</p>
+      <p>Great news! Your product "${productName}" has been approved and is now live on our platform.</p>
+      <p>Thank you for choosing to list your product with us.</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  },
+  rejected: {
+    subject: 'Update on Your Product Submission',
+    html: (productName) => `
+      <h1>Update on Your Product Submission</h1>
+      <p>Hello,</p>
+      <p>We've carefully reviewed your product submission "${productName}" and regret to inform you that we cannot approve it at this time.</p>
+      <p>If you'd like to understand more about this decision or submit a revised application, please reach out to our support team.</p>
+      <p>Best regards,<br>The BacklinkBot Team</p>
+    `
+  }
+};
+
+// Endpoint to handle product submission status changes
+app.post('/api/product-submissions/status', async (req, res) => {
+  const { submissionId, newStatus } = req.body;
+  
+  if (!submissionId || !newStatus) {
+    return res.status(400).json({ 
+      error: 'Missing required fields',
+      details: 'Both submissionId and newStatus are required'
+    });
+  }
+
+  try {
+    // Get the product submission details
+    const { data: submission, error: fetchError } = await supabase
+      .from('product_submissions')
+      .select('*')
+      .eq('id', submissionId)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!submission) {
+      return res.status(404).json({ error: 'Product submission not found' });
+    }
+
+    // Update the status
+    const { error: updateError } = await supabase
+      .from('product_submissions')
+      .update({ status: newStatus })
+      .eq('id', submissionId);
+
+    if (updateError) throw updateError;
+
+    // Send email notification if template exists for the status
+    if (EMAIL_TEMPLATES[newStatus] && submission.email_user) {
+      try {
+        await resend.emails.send({
+          from: 'BacklinkBot <notifications@backlinkbot.com>',
+          to: submission.email_user,
+          subject: EMAIL_TEMPLATES[newStatus].subject,
+          html: EMAIL_TEMPLATES[newStatus].html(submission.product_name)
+        });
+      } catch (emailError) {
+        console.error('Failed to send email:', emailError);
+        // Don't throw error here, just log it
+      }
+    }
+
+    res.json({ 
+      message: 'Status updated successfully',
+      submission: { ...submission, status: newStatus }
+    });
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).json({ 
+      error: 'Failed to update status',
+      details: error.message
+    });
   }
 });
 
