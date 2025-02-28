@@ -536,7 +536,7 @@ app.post('/api/product-submissions/status', async (req, res) => {
           console.log('Attempting to send email to:', submission.email_user);
           
           const emailData = {
-            from: 'BacklinkBot <notifications@backlinkbot.com>',
+            from: 'BacklinkBot <noreply@backlinkbotai.com>',
             to: submission.email_user,
             subject: EMAIL_TEMPLATES[newStatus].subject,
             html: EMAIL_TEMPLATES[newStatus].html(submission.product_name)
