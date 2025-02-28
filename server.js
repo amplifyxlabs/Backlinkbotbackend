@@ -7,6 +7,7 @@ const dotenv = require('dotenv');
 const OpenAI = require('openai');
 const Airtable = require('airtable');
 const cron = require('node-cron');
+const emailService = require('./services/emailService');
 
 // Load environment variables
 dotenv.config();
@@ -356,6 +357,249 @@ app.post('/api/sync-airtable', async (req, res) => {
     res.json({ success: true, message: 'Sync with Airtable completed' });
   } catch (error) {
     console.error('Error during manual sync:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ===== EMAIL TRIGGER ENDPOINTS =====
+
+// 1. User login (first time) - Welcome email
+app.post('/api/auth/welcome', async (req, res) => {
+  try {
+    const { userId, email, name } = req.body;
+    
+    if (!email) {
+      if (!userId) {
+        return res.status(400).json({ success: false, error: 'Either email or userId is required' });
+      }
+      // Get email from userId
+      try {
+        const userEmail = await emailService.getUserEmailById(supabase, userId);
+        const { data, error } = await emailService.sendWelcomeEmail(userEmail, name);
+        return res.json({ success: true, data });
+      } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+      }
+    }
+    
+    const { data, error } = await emailService.sendWelcomeEmail(email, name);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error });
+    }
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error sending welcome email:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 2. New form submission - asking for payment
+app.post('/api/submissions/payment-request', async (req, res) => {
+  try {
+    const { userId, submissionId } = req.body;
+    
+    // Get submission data
+    const { data: submission, error: submissionError } = await supabase
+      .from('product_submissions')
+      .select('*')
+      .eq('id', submissionId)
+      .single();
+    
+    if (submissionError || !submission) {
+      return res.status(404).json({ success: false, error: submissionError?.message || 'Submission not found' });
+    }
+    
+    // Get user email
+    let email = submission.email_user || submission.email;
+    if (!email && userId) {
+      try {
+        email = await emailService.getUserEmailById(supabase, userId);
+      } catch (emailError) {
+        return res.status(500).json({ success: false, error: emailError.message });
+      }
+    }
+    
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'User email not found' });
+    }
+    
+    const { data, error } = await emailService.sendPaymentRequestEmail(email, submission);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error });
+    }
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error sending payment request email:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 3. Payment confirmed
+app.post('/api/payments/confirmed', async (req, res) => {
+  try {
+    const { userId, paymentId } = req.body;
+    
+    // Get payment data
+    const { data: payment, error: paymentError } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('id', paymentId)
+      .single();
+    
+    if (paymentError || !payment) {
+      return res.status(404).json({ success: false, error: paymentError?.message || 'Payment not found' });
+    }
+    
+    // Get user email
+    let email;
+    try {
+      email = await emailService.getUserEmailById(supabase, payment.user_id || userId);
+    } catch (emailError) {
+      return res.status(500).json({ success: false, error: emailError.message });
+    }
+    
+    const { data, error } = await emailService.sendPaymentConfirmationEmail(email, payment);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error });
+    }
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error sending payment confirmation email:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 4. Submission verification started
+app.post('/api/submissions/verification-started', async (req, res) => {
+  try {
+    const { userId, submissionId } = req.body;
+    
+    // Get submission data
+    const { data: submission, error: submissionError } = await supabase
+      .from('product_submissions')
+      .select('*')
+      .eq('id', submissionId)
+      .single();
+    
+    if (submissionError || !submission) {
+      return res.status(404).json({ success: false, error: submissionError?.message || 'Submission not found' });
+    }
+    
+    // Get user email
+    let email = submission.email_user || submission.email;
+    if (!email && (submission.user_id || userId)) {
+      try {
+        email = await emailService.getUserEmailById(supabase, submission.user_id || userId);
+      } catch (emailError) {
+        return res.status(500).json({ success: false, error: emailError.message });
+      }
+    }
+    
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'User email not found' });
+    }
+    
+    const { data, error } = await emailService.sendVerificationStartedEmail(email, submission);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error });
+    }
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error sending verification started email:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 5. Submission completed/approved
+app.post('/api/submissions/completed', async (req, res) => {
+  try {
+    const { userId, submissionId } = req.body;
+    
+    // Get submission data
+    const { data: submission, error: submissionError } = await supabase
+      .from('product_submissions')
+      .select('*')
+      .eq('id', submissionId)
+      .single();
+    
+    if (submissionError || !submission) {
+      return res.status(404).json({ success: false, error: submissionError?.message || 'Submission not found' });
+    }
+    
+    // Get user email
+    let email = submission.email_user || submission.email;
+    if (!email && (submission.user_id || userId)) {
+      try {
+        email = await emailService.getUserEmailById(supabase, submission.user_id || userId);
+      } catch (emailError) {
+        return res.status(500).json({ success: false, error: emailError.message });
+      }
+    }
+    
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'User email not found' });
+    }
+    
+    const { data, error } = await emailService.sendSubmissionCompletedEmail(email, submission);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error });
+    }
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error sending submission completed email:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 6. Request feedback
+app.post('/api/submissions/request-feedback', async (req, res) => {
+  try {
+    const { userId, submissionId } = req.body;
+    
+    // Get submission data
+    const { data: submission, error: submissionError } = await supabase
+      .from('product_submissions')
+      .select('*')
+      .eq('id', submissionId)
+      .single();
+    
+    if (submissionError || !submission) {
+      return res.status(404).json({ success: false, error: submissionError?.message || 'Submission not found' });
+    }
+    
+    // Get user email
+    let email = submission.email_user || submission.email;
+    if (!email && (submission.user_id || userId)) {
+      try {
+        email = await emailService.getUserEmailById(supabase, submission.user_id || userId);
+      } catch (emailError) {
+        return res.status(500).json({ success: false, error: emailError.message });
+      }
+    }
+    
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'User email not found' });
+    }
+    
+    const { data, error } = await emailService.sendFeedbackRequestEmail(email, submission);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error });
+    }
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error sending feedback request email:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
