@@ -395,6 +395,105 @@ app.post('/api/send-submission-email', async (req, res) => {
   }
 });
 
+// Add new endpoint for status update emails
+app.post('/api/send-status-update-email', async (req, res) => {
+  const { email, productName, status } = req.body;
+
+  // Email content based on status
+  const getEmailContent = (status) => {
+    switch (status) {
+      case 'verifying':
+        return {
+          subject: 'Your Website Submission is Being Verified',
+          content: `
+            <h1>Verification in Progress for ${productName}</h1>
+            <p>We are currently verifying your website submission. Our team is reviewing the details to ensure everything meets our quality standards.</p>
+            <p>You will receive another update once the verification is complete.</p>
+          `
+        };
+      case 'in progress':
+        return {
+          subject: 'Your Website Submission is In Progress',
+          content: `
+            <h1>Processing Your Submission for ${productName}</h1>
+            <p>Your website submission is now being processed. Our team is working on preparing your listing.</p>
+            <p>We'll keep you updated on the progress.</p>
+          `
+        };
+      case 'done':
+        return {
+          subject: 'Your Website Submission is Complete',
+          content: `
+            <h1>Submission Complete for ${productName}</h1>
+            <p>Great news! Your website submission has been fully processed and is now complete.</p>
+            <p>You can check your dashboard for the full details.</p>
+          `
+        };
+      case 'feedback1':
+        return {
+          subject: 'Feedback Required for Your Website Submission',
+          content: `
+            <h1>Feedback Needed for ${productName}</h1>
+            <p>We need some additional information or clarification about your website submission.</p>
+            <p>Please check your dashboard and provide the requested feedback to continue the process.</p>
+          `
+        };
+      case 'approved':
+        return {
+          subject: 'Your Website Submission Has Been Approved',
+          content: `
+            <h1>Congratulations! ${productName} Has Been Approved</h1>
+            <p>We're pleased to inform you that your website submission has been approved.</p>
+            <p>Your listing is now live and ready for directory submissions.</p>
+          `
+        };
+      case 'rejected':
+        return {
+          subject: 'Website Submission Status Update',
+          content: `
+            <h1>Update Regarding ${productName}</h1>
+            <p>After careful review, we regret to inform you that your website submission could not be approved at this time.</p>
+            <p>Please review our guidelines and feel free to submit again after making the necessary adjustments.</p>
+          `
+        };
+      default:
+        return {
+          subject: 'Website Submission Status Update',
+          content: `
+            <h1>Status Update for ${productName}</h1>
+            <p>Your submission status has been updated to: ${status}</p>
+            <p>You can check your dashboard for more details.</p>
+          `
+        };
+    }
+  };
+
+  try {
+    const emailContent = getEmailContent(status);
+    const { data, error } = await resend.emails.send({
+      from: 'BacklinkBot <noreply@backlinkbotai.com>',
+      to: email,
+      subject: emailContent.subject,
+      html: `
+        ${emailContent.content}
+        <br>
+        <p>Best regards,</p>
+        <p>The BacklinkBot Team</p>
+      `,
+    });
+
+    if (error) {
+      console.error('Email error:', error);
+      return res.status(400).json({ error });
+    }
+
+    res.status(200).json({ data });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
 app.post('/api/send-credit-used-email', async (req, res) => {
   const { email, productName, plan } = req.body;
 
