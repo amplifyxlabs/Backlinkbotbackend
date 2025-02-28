@@ -145,9 +145,11 @@ async function scrapeWebsiteWithPuppeteer(url) {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
-        '--window-size=1920x1080'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+        '--window-size=1920x1080',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--single-process'
+      ]
     });
 
     const page = await browser.newPage();
