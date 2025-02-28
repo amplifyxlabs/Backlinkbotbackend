@@ -140,12 +140,12 @@ async function scrapeWebsiteWithPuppeteer(url) {
   try {
     console.log('Launching browser...');
     
-    // Configure chromium for Render environment
+    // Configure chromium for Render environment with minimal settings
     const puppeteerConfig = {
       headless: 'new', // Use new headless mode for better performance
       defaultViewport: {
-        width: 1280,
-        height: 720,
+        width: 800, // Smaller viewport for faster rendering
+        height: 600,
         deviceScaleFactor: 1,
       },
       executablePath: await chromium.executablePath(),
@@ -161,10 +161,12 @@ async function scrapeWebsiteWithPuppeteer(url) {
         '--disable-accelerated-2d-canvas',
         '--disable-web-security',
         '--disable-features=site-per-process',
-        '--window-size=1280,720'
+        '--window-size=800,600', // Smaller window size
+        '--disable-javascript', // Disable JavaScript for faster loading
+        '--disable-images', // Disable images
+        '--disable-css' // Disable CSS
       ],
-      ignoreHTTPSErrors: true,
-      timeout: 90000 // Increased browser launch timeout to 60 seconds
+      ignoreHTTPSErrors: true
     };
 
     // Launch browser with puppeteer directly
@@ -173,24 +175,19 @@ async function scrapeWebsiteWithPuppeteer(url) {
     console.log('Browser launched successfully');
     const page = await browser.newPage();
     
-    // Set viewport and user agent
-    await page.setViewport({ width: 1280, height: 720 });
+    // Set minimal viewport
+    await page.setViewport({ width: 800, height: 600 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
 
-    // Add extra headers
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
-    });
-
-    // Set a longer timeout for resources
-    await page.setDefaultNavigationTimeout(60000); // Increased to 60 seconds
+    // Set shorter timeouts
+    await page.setDefaultNavigationTimeout(20000);
     
-    // Block unnecessary resources to speed up loading
+    // Block all unnecessary resources
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
-      if (resourceType === 'image' || resourceType === 'font' || resourceType === 'media') {
+      if (resourceType === 'image' || resourceType === 'font' || resourceType === 'media' || 
+          resourceType === 'stylesheet' || resourceType === 'script') {
         req.abort();
       } else {
         req.continue();
@@ -198,35 +195,35 @@ async function scrapeWebsiteWithPuppeteer(url) {
     });
 
     console.log('Navigating to URL:', url);
-    // Navigate to the page with increased timeout
+    // Navigate with minimal wait conditions
     await page.goto(url, {
       waitUntil: 'domcontentloaded', // Only wait for DOM content
-      timeout: 60000 // Increased to 60 seconds
+      timeout: 20000 // Shorter timeout
     });
 
     console.log('Page loaded, extracting content...');
     
-    // Wait for body with increased timeout
-    await page.waitForSelector('body', { timeout: 45000 }); // Increased to 45 seconds
-    
-    // Extract only essential content without waiting for all elements
+    // Extract minimal content quickly
     const content = await page.evaluate(() => {
+      // Get meta content efficiently
       const getMetaContent = (name) => {
         const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
         return meta ? meta.getAttribute('content') : '';
       };
 
-      // Get limited text content for key elements
-      const getText = (selector, limit = 10) => {
+      // Get very limited text content
+      const getText = (selector, limit = 5) => {
         const elements = document.querySelectorAll(selector);
-        return Array.from(elements)
-          .slice(0, limit) // Limit the number of elements processed
-          .map(el => el.textContent.trim())
-          .filter(text => text.length > 0);
+        const results = [];
+        for (let i = 0; i < Math.min(elements.length, limit); i++) {
+          const text = elements[i].textContent.trim();
+          if (text.length > 0) results.push(text);
+        }
+        return results;
       };
 
-      // Get only important links (limit to 50)
-      const getLinks = (limit = 50) => {
+      // Get minimal links
+      const getLinks = (limit = 20) => {
         const links = [];
         const elements = document.querySelectorAll('a');
         let count = 0;
@@ -245,7 +242,7 @@ async function scrapeWebsiteWithPuppeteer(url) {
         return links;
       };
 
-      // Extract main content more efficiently
+      // Get minimal main content
       const getMainContent = () => {
         // Try to get content from main content areas first
         const mainElements = document.querySelectorAll('main, article, .content, #content, .main');
@@ -253,11 +250,11 @@ async function scrapeWebsiteWithPuppeteer(url) {
           return Array.from(mainElements)
             .map(el => el.textContent.trim())
             .join(' ')
-            .substring(0, 5000); // Limit to 5000 chars
+            .substring(0, 2000); // Limit to 2000 chars
         }
         
         // Fallback to body text with limit
-        return document.body.innerText.substring(0, 5000);
+        return document.body.innerText.substring(0, 2000);
       };
 
       return {
@@ -265,12 +262,12 @@ async function scrapeWebsiteWithPuppeteer(url) {
         metaDescription: getMetaContent('description') || getMetaContent('og:description'),
         mainContent: getMainContent(),
         headings: [
-          ...getText('h1', 5),
-          ...getText('h2', 10),
-          ...getText('h3', 10)
+          ...getText('h1', 3),
+          ...getText('h2', 5),
+          ...getText('h3', 5)
         ],
-        paragraphs: getText('p', 20),
-        links: getLinks(50)
+        paragraphs: getText('p', 10),
+        links: getLinks(20)
       };
     });
 
@@ -301,8 +298,8 @@ app.post('/api/scrape-website', async (req, res) => {
     });
   }
   
-  // Set a timeout for the entire operation
-  const TIMEOUT_MS = 90000; // Increased to 90 seconds
+  // Set a timeout for the entire operation - increased to 90 seconds
+  const TIMEOUT_MS = 90000; // 90 seconds
   let timeoutId;
   
   const timeoutPromise = new Promise((_, reject) => {
@@ -388,35 +385,27 @@ app.post('/api/scrape-website', async (req, res) => {
   }
 });
 
-// Function to analyze website content with GPT-4o
+// Function to analyze website content with GPT
 async function analyzeWebsiteWithGPT(content, websiteName) {
   try {
-    // Create a more concise content summary
+    // Create a very concise content summary
     const contentSummary = `
-      Website Name: ${websiteName}
+      Website: ${websiteName}
       Title: ${content.title}
       Description: ${content.metaDescription}
-      Main Headings: ${content.headings.slice(0, 3).join(', ')}
-      Content Sample: ${content.paragraphs.slice(0, 2).join(' ').substring(0, 500)}
-      Key Links: ${content.links.slice(0, 3).map(l => l.text).join(', ')}
+      Headings: ${content.headings.slice(0, 3).join(', ')}
+      Sample: ${content.paragraphs.slice(0, 1).join(' ').substring(0, 200)}
     `;
     
     const prompt = `
-      Analyze this website content and provide a simplified submission strategy.
-      
-      Website Content:
+      Analyze this website:
       ${contentSummary}
       
-      Provide only:
-      1. Description (2 sentences explaining the website's purpose and value)
-      2. Categories (3 relevant categories for directory listings)
-      3. Key Features (3 standout features)
-      
-      Format as JSON:
+      Return JSON only:
       {
-        "description": "...",
-        "categories": ["...", "...", "..."],
-        "features": ["...", "...", "..."]
+        "description": "2 sentence description",
+        "categories": ["category1", "category2", "category3"],
+        "features": ["feature1", "feature2", "feature3"]
       }
     `;
     
@@ -425,13 +414,13 @@ async function analyzeWebsiteWithGPT(content, websiteName) {
       messages: [
         { 
           role: "system", 
-          content: "You are a website directory expert. Provide concise, actionable insights based on website analysis."
+          content: "You are a website directory expert. Provide concise insights in JSON format only."
         },
         { role: "user", content: prompt }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.5,
-      max_tokens: 500 // Limit token usage
+      temperature: 0.3,
+      max_tokens: 300 // Limit token usage
     });
     
     const analysis = JSON.parse(response.choices[0].message.content);
@@ -445,7 +434,12 @@ async function analyzeWebsiteWithGPT(content, websiteName) {
     };
   } catch (error) {
     console.error('Error analyzing with GPT:', error);
-    return null;
+    return {
+      description: "Could not analyze website content.",
+      categories: ["General"],
+      features: ["Website"],
+      analysisDate: new Date().toISOString()
+    };
   }
 }
 
